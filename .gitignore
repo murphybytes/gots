@@ -15,3 +15,5 @@
 
 api/gots.pb.go
 vendor
+.idea
+
