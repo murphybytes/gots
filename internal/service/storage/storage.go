@@ -11,6 +11,21 @@ import (
 
 	"github.com/OneOfOne/xxhash"
 	"github.com/murphybytes/gots/api"
+	"github.com/murphybytes/gots/internal/service"
+)
+
+const (
+	expirationFrequency = 5 * time.Second
+	// NoUpperBound indicates that there is no upper bound constraint on a series of elements
+	NoUpperBound uint64 = 0xFFFFFFFFFFFFFFFF
+	// NoLowerBound indicates that there is not a lower bound constraint on a series of elements
+	NoLowerBound uint64 = 0
+	// DefaultMaxAge default amount of time we keep elements
+	DefaultMaxAge = 61 * time.Minute
+	// DefaultWorkerCount is the default number of workers to use to handle data
+	DefaultWorkerCount = 256
+	// DefaultChannelBufferSize is the default buffer size for work channels
+	DefaultChannelBufferSize = 100
 )
 
 type Writer interface {
@@ -55,6 +70,7 @@ func New(maxAge time.Duration, workerCount, channelBufferSize int) *storage {
 		s.work[i] = make(chan operation, channelBufferSize)
 		go func(work <-chan operation, close <-chan struct{}) {
 			defer s.wait.Done()
+			ticker := time.Tick(expirationFrequency)
 			data := make(elementMap)
 			for {
 				select {
@@ -62,15 +78,17 @@ func New(maxAge time.Duration, workerCount, channelBufferSize int) *storage {
 					return
 				case job := <-work:
 					job(data)
+				case <-ticker:
+					expireOldElements(data, s.maxAge)
 				}
 			}
-
 		}(s.work[i], s.close)
 	}
 	return s
 
 }
 
+// Write adds an element to the time series for a key. 
 func (s *storage) Write(key string, elt api.Element) {
 	partition := s.calculateWorkerPartition(key)
 	s.work[partition] <- func(data elementMap) {
@@ -85,15 +103,56 @@ func (s *storage) Write(key string, elt api.Element) {
 			return
 		}
 
-		s.insert(pl, elt)
+		insert(pl, elt)
 	}
 }
 
+type searchResult struct {
+	err  error
+	elts []api.Element
+}
+
+// Search returns a set of elements for a particular key between first and last times. First and last are unix time in
+// nanoseconds.
 func (s *storage) Search(key string, first, last uint64) ([]api.Element, error) {
-	return nil, nil
+	response := make(chan searchResult)
+	partition := s.calculateWorkerPartition(key)
+	s.work[partition] <- func(data elementMap) {
+		if elts, ok := data[key]; ok {
+			if elts.Len() == 0 {
+				response <- searchResult{}
+				return
+			}
+			lastTick := elts.Back().Value.(api.Element)
+			if lastTick.Timestamp < int64(first) {
+				response <- searchResult{}
+				return
+			}
+			firstTick := elts.Front().Value.(api.Element)
+			if firstTick.Timestamp >= int64(last) {
+				response <- searchResult{}
+				return
+			}
+			result := searchResult{
+				elts: make([]api.Element, 0, elts.Len()),
+			}
+			for elt := elts.Front(); elt != nil; elt = elt.Next() {
+				tick := elt.Value.(api.Element)
+				if tick.Timestamp >= int64(first) && tick.Timestamp < int64(last) {
+					result.elts = append(result.elts, tick)
+				}
+			}
+			response <- result
+			return
+		}
+		response <- searchResult{err: &service.NotFoundError{Key: key}}
+	}
+	return nil, &service.NotFoundError{}
 }
 
 func (s *storage) Close() error {
+	close(s.close)
+	s.wait.Wait()
 	return nil
 }
 
@@ -102,17 +161,35 @@ func (s *storage) calculateWorkerPartition(key string) int {
 	return int(cs) % s.workerCount
 }
 
-func (s *storage) insert(l *list.List, elt api.Element) {
-	cutOff := time.Now().Add(-1 * s.maxAge).UnixNano()
-	// search backwards for insertion
-	//var mark *list.Element
+func insert(l *list.List, elt api.Element) {
 	for curr := l.Back(); curr != nil; curr = curr.Prev() {
-		currElt := curr.Value.(api.Element)
-		if currElt.Timestamp < cutOff {
-			l.Remove(curr)
-			curr = l.Back()
+		existingElt := curr.Value.(api.Element)
+		if elt.Timestamp > existingElt.Timestamp {
+			l.InsertAfter(elt, curr)
+			return
+		}
+	}
+	l.PushFront(elt)
+}
+
+func expireOldElements(data elementMap, maxAge time.Duration) {
+	cutOff := time.Now().Add(-1 * maxAge).UnixNano()
+	var empties []string
+	for key, l := range data {
+		for {
+			curr := l.Front()
+			elt := curr.Value.(api.Element)
+			if elt.Timestamp < cutOff {
+				l.Remove(curr)
+				continue
+			}
 			break
 		}
-
+		if l.Len() == 0 {
+			empties = append(empties, key)
+		}
+	}
+	for _, k := range empties {
+		delete(data, k)
 	}
 }
