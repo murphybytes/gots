@@ -74,6 +74,21 @@ func TestStorageInsertion(t *testing.T) {
 				{120, nil},
 			},
 		},
+		{
+			"reversed",
+			[]api.Element{
+				{130, nil},
+				{120, nil},
+				{110, nil},
+				{100, nil},
+			},
+			[]api.Element{
+				{100, nil},
+				{110, nil},
+				{120, nil},
+				{130, nil},
+			},
+		},
 	}
 
 	for i := range tt {
