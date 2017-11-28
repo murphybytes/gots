@@ -79,7 +79,8 @@ func New(maxAge time.Duration, workerCount, channelBufferSize int) *storage {
 				case job := <-work:
 					job(data)
 				case <-ticker:
-					expireOldElements(data, s.maxAge)
+					cutOff := time.Now().Add(-1 * s.maxAge).UnixNano()
+					expireOldElements(data, cutOff)
 				}
 			}
 		}(s.work[i], s.close)
@@ -88,7 +89,7 @@ func New(maxAge time.Duration, workerCount, channelBufferSize int) *storage {
 
 }
 
-// Write adds an element to the time series for a key. 
+// Write adds an element to the time series for a key.
 func (s *storage) Write(key string, elt api.Element) {
 	partition := s.calculateWorkerPartition(key)
 	s.work[partition] <- func(data elementMap) {
@@ -172,14 +173,13 @@ func insert(l *list.List, elt api.Element) {
 	l.PushFront(elt)
 }
 
-func expireOldElements(data elementMap, maxAge time.Duration) {
-	cutOff := time.Now().Add(-1 * maxAge).UnixNano()
+func expireOldElements(data elementMap, firstTimestamp int64) {
 	var empties []string
 	for key, l := range data {
 		for {
 			curr := l.Front()
 			elt := curr.Value.(api.Element)
-			if elt.Timestamp < cutOff {
+			if elt.Timestamp < firstTimestamp {
 				l.Remove(curr)
 				continue
 			}
