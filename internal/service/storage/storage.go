@@ -12,12 +12,13 @@ import (
 	"github.com/OneOfOne/xxhash"
 	"github.com/murphybytes/gots/api"
 	"github.com/murphybytes/gots/internal/service"
+
 )
 
 const (
 	expirationFrequency = 5 * time.Second
 	// NoUpperBound indicates that there is no upper bound constraint on a series of elements
-	NoUpperBound uint64 = 0xFFFFFFFFFFFFFFFF
+	NoUpperBound uint64 = 0x7FFFFFFFFFFFFFFF
 	// NoLowerBound indicates that there is not a lower bound constraint on a series of elements
 	NoLowerBound uint64 = 0
 	// DefaultMaxAge default amount of time we keep elements
@@ -116,22 +117,22 @@ type searchResult struct {
 // Search returns a set of elements for a particular key between first and last times. First and last are unix time in
 // nanoseconds.
 func (s *storage) Search(key string, first, last uint64) ([]api.Element, error) {
-	response := make(chan searchResult)
+	responseChan := make(chan searchResult)
 	partition := s.calculateWorkerPartition(key)
 	s.work[partition] <- func(data elementMap) {
 		if elts, ok := data[key]; ok {
 			if elts.Len() == 0 {
-				response <- searchResult{}
+				responseChan <- searchResult{}
 				return
 			}
 			lastTick := elts.Back().Value.(api.Element)
 			if lastTick.Timestamp < int64(first) {
-				response <- searchResult{}
+				responseChan <- searchResult{}
 				return
 			}
 			firstTick := elts.Front().Value.(api.Element)
 			if firstTick.Timestamp >= int64(last) {
-				response <- searchResult{}
+				responseChan <- searchResult{}
 				return
 			}
 			result := searchResult{
@@ -143,18 +144,37 @@ func (s *storage) Search(key string, first, last uint64) ([]api.Element, error) 
 					result.elts = append(result.elts, tick)
 				}
 			}
-			response <- result
+			responseChan <- result
 			return
 		}
-		response <- searchResult{err: &service.NotFoundError{Key: key}}
+		responseChan <- searchResult{err: &service.NotFoundError{Key: key}}
 	}
-	return nil, &service.NotFoundError{}
+	result := <-responseChan
+	return result.elts, result.err
 }
 
 func (s *storage) Close() error {
 	close(s.close)
 	s.wait.Wait()
 	return nil
+}
+
+func (s *storage ) keys() []string {
+	var result []string
+	for _, w := range s.work {
+		ch := make(chan []string)
+		w <- func(data elementMap) {
+			var result []string
+			for k := range data {
+				result = append(result, k)
+			}
+			ch <- result
+		}
+		r := <- ch
+		close(ch)
+		result = append(result, r...)
+	}
+	return result
 }
 
 func (s *storage) calculateWorkerPartition(key string) int {
@@ -165,7 +185,7 @@ func (s *storage) calculateWorkerPartition(key string) int {
 func insert(l *list.List, elt api.Element) {
 	for curr := l.Back(); curr != nil; curr = curr.Prev() {
 		existingElt := curr.Value.(api.Element)
-		if elt.Timestamp > existingElt.Timestamp {
+		if elt.Timestamp >= existingElt.Timestamp {
 			l.InsertAfter(elt, curr)
 			return
 		}
@@ -173,11 +193,38 @@ func insert(l *list.List, elt api.Element) {
 	l.PushFront(elt)
 }
 
+func search( elts list.List, first, last int64 ) []api.Element {
+	if elts.Len() == 0 {
+		return nil
+	}
+	lastTick := elts.Back().Value.(api.Element)
+	if lastTick.Timestamp < first {
+		return nil
+	}
+	firstTick := elts.Front().Value.(api.Element)
+	if firstTick.Timestamp >= last {
+		return nil
+	}
+	result := make([]api.Element, 0, elts.Len())
+
+	for elt := elts.Front(); elt != nil; elt = elt.Next() {
+		tick := elt.Value.(api.Element)
+		if tick.Timestamp >= first && tick.Timestamp < last {
+			result = append(result, tick)
+		}
+	}
+	return result 
+}
+
 func expireOldElements(data elementMap, firstTimestamp int64) {
 	var empties []string
 	for key, l := range data {
+
 		for {
 			curr := l.Front()
+			if curr == nil {
+				break
+			}
 			elt := curr.Value.(api.Element)
 			if elt.Timestamp < firstTimestamp {
 				l.Remove(curr)
@@ -185,6 +232,7 @@ func expireOldElements(data elementMap, firstTimestamp int64) {
 			}
 			break
 		}
+
 		if l.Len() == 0 {
 			empties = append(empties, key)
 		}
