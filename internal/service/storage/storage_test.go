@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/murphybytes/gots/api"
+	"github.com/murphybytes/gots/internal/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -225,6 +226,90 @@ func TestStorage(t *testing.T) {
 			require.Nil(t, err)
 			assert.Len(t, elts, 100)
 			assert.True(t, sorted(elts))
+		})
+	}
+}
+
+func TestStorageSearch(t *testing.T) {
+	base := time.Now().UnixNano()
+	// TODO: more search tests, no lower bound, upper bound and lower bound with no upper bound, bounds outside of elts 
+
+	tt := []struct {
+		key      string
+		desc     string
+		inserts  []api.Element
+		expected []api.Element
+		first    uint64
+		last     uint64
+		err      error
+	}{
+
+		{
+			"A",
+			"no_bounds",
+			[]api.Element{
+				{base + 130, nil},
+				{base + 130, nil},
+				{base + 120, nil},
+				{base + 110, nil},
+				{base + 100, nil},
+			},
+			[]api.Element{
+				{base + 100, nil},
+				{base + 110, nil},
+				{base + 120, nil},
+				{base + 130, nil},
+				{base + 130, nil},
+			},
+			NoLowerBound,
+			NoUpperBound,
+			nil,
+		},
+		{
+			"B",
+			"normal_search",
+			[]api.Element{
+				{base + 130, nil},
+				{base + 130, nil},
+				{base + 120, nil},
+				{base + 110, nil},
+				{base + 100, nil},
+			},
+			[]api.Element{
+				{base + 110, nil},
+				{base + 120, nil},
+			},
+			uint64(base + 110),
+			uint64(base + 130),
+			nil,
+		},
+		{
+			"C",
+			"invalid_search",
+			[]api.Element{
+				{base + 130, nil},
+				{base + 130, nil},
+				{base + 120, nil},
+				{base + 110, nil},
+				{base + 100, nil},
+			},
+			nil,
+			uint64(base + 130),
+			uint64(base + 110),
+			&service.ErrorInvalidSearch{},
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.desc, func(t *testing.T) {
+			stg := New(DefaultMaxAge, 10, DefaultChannelBufferSize)
+			defer stg.Close()
+			for _, elt := range tc.inserts {
+				stg.Write(tc.key, elt)
+			}
+			actual, err := stg.Search(tc.key, tc.first, tc.last)
+			require.Equal(t, tc.err, err)
+			assert.Equal(t, tc.expected, actual)
 		})
 	}
 }

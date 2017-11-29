@@ -12,7 +12,6 @@ import (
 	"github.com/OneOfOne/xxhash"
 	"github.com/murphybytes/gots/api"
 	"github.com/murphybytes/gots/internal/service"
-
 )
 
 const (
@@ -117,37 +116,17 @@ type searchResult struct {
 // Search returns a set of elements for a particular key between first and last times. First and last are unix time in
 // nanoseconds.
 func (s *storage) Search(key string, first, last uint64) ([]api.Element, error) {
+	if first > last {
+		return nil, &service.ErrorInvalidSearch{}
+	}
 	responseChan := make(chan searchResult)
 	partition := s.calculateWorkerPartition(key)
 	s.work[partition] <- func(data elementMap) {
 		if elts, ok := data[key]; ok {
-			if elts.Len() == 0 {
-				responseChan <- searchResult{}
-				return
-			}
-			lastTick := elts.Back().Value.(api.Element)
-			if lastTick.Timestamp < int64(first) {
-				responseChan <- searchResult{}
-				return
-			}
-			firstTick := elts.Front().Value.(api.Element)
-			if firstTick.Timestamp >= int64(last) {
-				responseChan <- searchResult{}
-				return
-			}
-			result := searchResult{
-				elts: make([]api.Element, 0, elts.Len()),
-			}
-			for elt := elts.Front(); elt != nil; elt = elt.Next() {
-				tick := elt.Value.(api.Element)
-				if tick.Timestamp >= int64(first) && tick.Timestamp < int64(last) {
-					result.elts = append(result.elts, tick)
-				}
-			}
-			responseChan <- result
+			responseChan <- searchResult{elts: search(elts, int64(first), int64(last))}
 			return
 		}
-		responseChan <- searchResult{err: &service.NotFoundError{Key: key}}
+		responseChan <- searchResult{err: &service.ErrorNotFound{Key: key}}
 	}
 	result := <-responseChan
 	return result.elts, result.err
@@ -159,7 +138,7 @@ func (s *storage) Close() error {
 	return nil
 }
 
-func (s *storage ) keys() []string {
+func (s *storage) keys() []string {
 	var result []string
 	for _, w := range s.work {
 		ch := make(chan []string)
@@ -170,7 +149,7 @@ func (s *storage ) keys() []string {
 			}
 			ch <- result
 		}
-		r := <- ch
+		r := <-ch
 		close(ch)
 		result = append(result, r...)
 	}
@@ -193,7 +172,7 @@ func insert(l *list.List, elt api.Element) {
 	l.PushFront(elt)
 }
 
-func search( elts list.List, first, last int64 ) []api.Element {
+func search(elts *list.List, first, last int64) []api.Element {
 	if elts.Len() == 0 {
 		return nil
 	}
@@ -213,7 +192,7 @@ func search( elts list.List, first, last int64 ) []api.Element {
 			result = append(result, tick)
 		}
 	}
-	return result 
+	return result
 }
 
 func expireOldElements(data elementMap, firstTimestamp int64) {
