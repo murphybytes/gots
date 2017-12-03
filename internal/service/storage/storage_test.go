@@ -232,7 +232,7 @@ func TestStorage(t *testing.T) {
 
 func TestStorageSearch(t *testing.T) {
 	base := time.Now().UnixNano()
-	// TODO: more search tests, no lower bound, upper bound and lower bound with no upper bound, bounds outside of elts 
+	// TODO: more search tests, no lower bound, upper bound and lower bound with no upper bound, bounds outside of elts
 
 	tt := []struct {
 		key      string
@@ -248,18 +248,18 @@ func TestStorageSearch(t *testing.T) {
 			"A",
 			"no_bounds",
 			[]api.Element{
-				{base + 130, nil},
-				{base + 130, nil},
-				{base + 120, nil},
-				{base + 110, nil},
-				{base + 100, nil},
+				{Timestamp: base + 130},
+				{Timestamp: base + 130},
+				{Timestamp: base + 120},
+				{Timestamp: base + 110},
+				{Timestamp: base + 100},
 			},
 			[]api.Element{
-				{base + 100, nil},
-				{base + 110, nil},
-				{base + 120, nil},
-				{base + 130, nil},
-				{base + 130, nil},
+				{Timestamp: base + 100},
+				{Timestamp: base + 110},
+				{Timestamp: base + 120},
+				{Timestamp: base + 130},
+				{Timestamp: base + 130},
 			},
 			NoLowerBound,
 			NoUpperBound,
@@ -269,15 +269,15 @@ func TestStorageSearch(t *testing.T) {
 			"B",
 			"normal_search",
 			[]api.Element{
-				{base + 130, nil},
-				{base + 130, nil},
-				{base + 120, nil},
-				{base + 110, nil},
-				{base + 100, nil},
+				{Timestamp: base + 130},
+				{Timestamp: base + 130},
+				{Timestamp: base + 120},
+				{Timestamp: base + 110},
+				{Timestamp: base + 100},
 			},
 			[]api.Element{
-				{base + 110, nil},
-				{base + 120, nil},
+				{Timestamp: base + 110},
+				{Timestamp: base + 120},
 			},
 			uint64(base + 110),
 			uint64(base + 130),
@@ -287,11 +287,11 @@ func TestStorageSearch(t *testing.T) {
 			"C",
 			"invalid_search",
 			[]api.Element{
-				{base + 130, nil},
-				{base + 130, nil},
-				{base + 120, nil},
-				{base + 110, nil},
-				{base + 100, nil},
+				{Timestamp: base + 130},
+				{Timestamp: base + 130},
+				{Timestamp: base + 120},
+				{Timestamp: base + 110},
+				{Timestamp: base + 100},
 			},
 			nil,
 			uint64(base + 130),

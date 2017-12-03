@@ -8,7 +8,8 @@ func (n *ErrorNotFound) Error() string {
 	return "key '" + n.Key + "' does not exist"
 }
 
-type ErrorInvalidSearch struct {}
-func(e *ErrorInvalidSearch) Error() string {
+type ErrorInvalidSearch struct{}
+
+func (e *ErrorInvalidSearch) Error() string {
 	return "search arguments are not valid"
 }
