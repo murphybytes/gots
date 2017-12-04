@@ -3,11 +3,10 @@ package config
 
 import (
 	"github.com/joeshaw/envdecode"
+	"github.com/pkg/errors"
 	"strings"
 	"time"
-	"github.com/pkg/errors"
 )
-
 
 type list []string
 
@@ -32,8 +31,8 @@ type storage struct {
 
 type values struct {
 	ServiceName string `env:"GOTS_SERVICE_NAME,default=gots"`
-	Kafka   kafka
-	Storage storage
+	Kafka       kafka
+	Storage     storage
 }
 
 // New reads environment variables for the application and returns a structure containing these values.
@@ -45,9 +44,7 @@ func New() (*values, error) {
 	return &vals, nil
 }
 
-
-
-func(t *list) Decode(v string) error {
+func (t *list) Decode(v string) error {
 	items := strings.Split(v, ",")
 	*t = append(*t, items...)
 	return nil

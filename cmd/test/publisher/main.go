@@ -21,6 +21,7 @@ func main() {
 			}
 		},
 	)
+
 	service := micro.NewService(
 		micro.Name("publisher"),
 		micro.Broker(b),

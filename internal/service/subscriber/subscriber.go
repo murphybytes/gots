@@ -18,7 +18,9 @@ func New(storage storage.Writer) *sub {
 		storage: storage,
 	}
 }
+
 // Process writes messages to storage.
-func (s *sub) Process(ctx context.Context, msg *api.Message) {
+func (s *sub) Process(ctx context.Context, msg *api.Message) error {
 	s.storage.Write(msg.Key, api.Element{Timestamp: msg.Timestamp, Data: msg.Data})
+	return nil
 }

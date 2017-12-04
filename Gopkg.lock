@@ -105,7 +105,7 @@
 
 [[projects]]
   name = "github.com/micro/go-plugins"
-  packages = ["broker/kafka"]
+  packages = ["broker/kafka","registry/memory"]
   revision = "1ee770291fd88fc7609ca225f07371a9fd6664ea"
   version = "v0.6.0"
 
@@ -214,6 +214,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "9af6536b74b29064e94a9261f9927e2bd0dd84f3b2685bb1f3f97748ccf6d25d"
+  inputs-digest = "7c047f53f23883cb60705029246a91454d8fe75bfe05d7030e064c009734b060"
   solver-name = "gps-cdcl"
   solver-version = 1

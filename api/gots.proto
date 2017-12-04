@@ -29,10 +29,10 @@ message SearchRequest {
     // The unique key of the series we are after
     string key = 1;
     // The inclusive lower build timestamp of the timeseries elements we're interested in.
-    int64 oldest = 2;
+    uint64 oldest = 2;
     // The upper bound timestamp, all elements up to, but not including this timestamp will be included in the result
     // set.  Zero value means there is no upper bound.
-    int64 newest = 3;
+    uint64 newest = 3;
 }
 
 // SearchResponse contains the requested series and a status code that describes the outcome of the request.
@@ -43,6 +43,7 @@ message SearchResponse {
         NOT_FOUND = 1;
         SERVER_ERROR = 2;
         NOT_AUTHORIZED = 3;
+        INVALID_ARGUMENTS = 4;
     }
     Status status = 2;
 }

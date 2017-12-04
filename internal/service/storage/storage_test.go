@@ -211,7 +211,7 @@ func TestStorage(t *testing.T) {
 
 			for i := 0; i < 100; i++ {
 				for _, k := range keys {
-					storage.Search(k, NoLowerBound, NoUpperBound)
+					storage.Search(k, api.NoLowerBound, api.NoUpperBound)
 				}
 			}
 		}()
@@ -222,7 +222,7 @@ func TestStorage(t *testing.T) {
 		// sample keys
 		j := mr.Int() % 100
 		t.Run(fmt.Sprintf("sampled_%d", j), func(t *testing.T) {
-			elts, err := storage.Search(keys[j], NoLowerBound, NoUpperBound)
+			elts, err := storage.Search(keys[j], api.NoLowerBound, api.NoUpperBound)
 			require.Nil(t, err)
 			assert.Len(t, elts, 100)
 			assert.True(t, sorted(elts))
@@ -261,8 +261,8 @@ func TestStorageSearch(t *testing.T) {
 				{Timestamp: base + 130},
 				{Timestamp: base + 130},
 			},
-			NoLowerBound,
-			NoUpperBound,
+			api.NoLowerBound,
+			api.NoUpperBound,
 			nil,
 		},
 		{

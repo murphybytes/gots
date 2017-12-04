@@ -21,7 +21,7 @@ func TestConfig(t *testing.T) {
 
 	assert.Equal(t, list{"192.168.1.1:9093"}, v.Kafka.BrokerAddress)
 	assert.Equal(t, list{"topic1", "topic2"}, v.Kafka.Topics)
-	assert.Equal(t, 20*time.Second, v.Storage.MaxAge )
+	assert.Equal(t, 20*time.Second, v.Storage.MaxAge)
 	assert.Equal(t, 300, v.Storage.WorkerCount)
 	assert.Equal(t, 123, v.Storage.ChannelBufferSize)
 }
