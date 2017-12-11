@@ -6,16 +6,16 @@ import (
 	"encoding/base64"
 	"fmt"
 	mr "math/rand"
+	"sync"
 	"testing"
 	"time"
 
-	"sync"
-
 	"github.com/murphybytes/gots/api"
-	"github.com/murphybytes/gots/internal/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var epoch = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func listToArray(l list.List) []api.Element {
 	var result []api.Element
@@ -26,7 +26,7 @@ func listToArray(l list.List) []api.Element {
 }
 
 func TestStorageCreationAndClose(t *testing.T) {
-	s := New(DefaultMaxAge, DefaultWorkerCount, DefaultChannelBufferSize)
+	s := New(DefaultMaxAge, DefaultWorkerCount, DefaultChannelBufferSize, nil)
 	require.NotNil(t, s)
 	s.Close()
 }
@@ -152,7 +152,7 @@ func TestStorageExpiration(t *testing.T) {
 		"D": &listD,
 	}
 
-	expireOldElements(data, 110)
+	expireOldElements(data, 110, nil)
 	// first elt removed
 	require.Equal(t, 3, data["A"].Len())
 	require.Equal(t, int64(110), data["A"].Front().Value.(api.Element).Timestamp)
@@ -188,7 +188,7 @@ func TestStorage(t *testing.T) {
 		return true
 	}
 
-	storage := New(DefaultMaxAge, 10, DefaultChannelBufferSize)
+	storage := New(DefaultMaxAge, 10, DefaultChannelBufferSize, nil)
 	defer storage.Close()
 	var wg sync.WaitGroup
 	wg.Add(200)
@@ -197,10 +197,10 @@ func TestStorage(t *testing.T) {
 			defer wg.Done()
 			key := randomKey()
 			// have to use base as current time or all the keys will expire before we can do our tests
-			base := time.Now().UnixNano()
+			base := time.Now()
 			for i := 0; i < 100; i++ {
-				ts := mr.Int63() % 100
-				storage.Write(key, api.Element{base + ts, nil})
+				ts := time.Duration(mr.Int63() % 100)
+				storage.Write(key, base.Add(ts), nil)
 			}
 		}()
 	}
@@ -296,16 +296,16 @@ func TestStorageSearch(t *testing.T) {
 			nil,
 			uint64(base + 130),
 			uint64(base + 110),
-			&service.ErrorInvalidSearch{},
+			&ErrorInvalidSearch{},
 		},
 	}
 
 	for _, tc := range tt {
 		t.Run(tc.desc, func(t *testing.T) {
-			stg := New(DefaultMaxAge, 10, DefaultChannelBufferSize)
+			stg := New(DefaultMaxAge, 10, DefaultChannelBufferSize, nil)
 			defer stg.Close()
 			for _, elt := range tc.inserts {
-				stg.Write(tc.key, elt)
+				stg.Write(tc.key, epoch.Add(time.Duration(elt.Timestamp)), nil)
 			}
 			actual, err := stg.Search(tc.key, tc.first, tc.last)
 			require.Equal(t, tc.err, err)

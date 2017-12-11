@@ -2,14 +2,6 @@ syntax = "proto3";
 
 package api;
 
-// Message queue message
-message Message {
-    // Unix time
-    int64 timestamp = 1;
-    string key = 2;
-    bytes data = 3;
-}
-
 // A single tick in a time series.
 message Element {
     // Unix time in nanoseconds

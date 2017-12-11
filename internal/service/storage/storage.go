@@ -11,7 +11,6 @@ import (
 
 	"github.com/OneOfOne/xxhash"
 	"github.com/murphybytes/gots/api"
-	"github.com/murphybytes/gots/internal/service"
 )
 
 const (
@@ -26,7 +25,7 @@ const (
 )
 
 type Writer interface {
-	Write(key string, elt api.Element)
+	Write(key string, ts time.Time, data []byte)
 }
 
 type Searcher interface {
@@ -39,6 +38,12 @@ type Manager interface {
 	Writer
 }
 
+// ExpiryHandler is a callback that will receive time series elements when they expire.  This can be used
+// to aggregate and persist old elements.
+type ExpiryHandler func(key string, elt api.Element)
+type Count int
+type Size int
+
 // Element storage is optimized for inserts
 type elementMap map[string]*list.List
 type operation func(data elementMap)
@@ -48,22 +53,23 @@ type storage struct {
 	close       chan struct{}
 	work        []chan operation
 	maxAge      time.Duration
-	workerCount int
+	workerCount Count
 }
 
 // New creates in memory storage for time series data. Elements older than maxAge will be discarded.  workerCount is the
 // number of goroutines to handle messages and search requests.
 // jobBufferSize is the number of jobs that can be queued up so jobs can be processed asynchronously.
-func New(maxAge time.Duration, workerCount, channelBufferSize int) *storage {
+// TODO: add callback that will be invoked when elements expire so that callers can do things like aggregate/persist expired elements
+func New(maxAge time.Duration, workerCount Count, channelBufferSize Size, onExpire ExpiryHandler) *storage {
 	s := &storage{
 		close:       make(chan struct{}),
 		maxAge:      maxAge,
 		workerCount: workerCount,
 	}
 	s.work = make([]chan operation, workerCount)
-	s.wait.Add(workerCount)
+	s.wait.Add(int(workerCount))
 
-	for i := 0; i < workerCount; i++ {
+	for i := 0; i < int(workerCount); i++ {
 		s.work[i] = make(chan operation, channelBufferSize)
 		go func(work <-chan operation, close <-chan struct{}) {
 			defer s.wait.Done()
@@ -77,7 +83,7 @@ func New(maxAge time.Duration, workerCount, channelBufferSize int) *storage {
 					job(data)
 				case <-ticker:
 					cutOff := time.Now().Add(-1 * s.maxAge).UnixNano()
-					expireOldElements(data, cutOff)
+					expireOldElements(data, cutOff, onExpire)
 				}
 			}
 		}(s.work[i], s.close)
@@ -87,21 +93,22 @@ func New(maxAge time.Duration, workerCount, channelBufferSize int) *storage {
 }
 
 // Write adds an element to the time series for a key.
-func (s *storage) Write(key string, elt api.Element) {
+func (s *storage) Write(key string, ts time.Time, data []byte) {
+	newElt := api.Element{Timestamp: ts.UnixNano(), Data: data}
 	partition := s.calculateWorkerPartition(key)
-	s.work[partition] <- func(data elementMap) {
+	s.work[partition] <- func(elts elementMap) {
 		var (
 			pl    *list.List
 			found bool
 		)
-		if pl, found = data[key]; !found {
+		if pl, found = elts[key]; !found {
 			pl = new(list.List)
-			pl.PushBack(elt)
-			data[key] = pl
+			pl.PushBack(newElt)
+			elts[key] = pl
 			return
 		}
 
-		insert(pl, elt)
+		insert(pl, newElt)
 	}
 }
 
@@ -114,7 +121,7 @@ type searchResult struct {
 // nanoseconds.
 func (s *storage) Search(key string, first, last uint64) ([]api.Element, error) {
 	if first > last {
-		return nil, &service.ErrorInvalidSearch{}
+		return nil, &ErrorInvalidSearch{}
 	}
 	responseChan := make(chan searchResult)
 	partition := s.calculateWorkerPartition(key)
@@ -123,7 +130,7 @@ func (s *storage) Search(key string, first, last uint64) ([]api.Element, error) 
 			responseChan <- searchResult{elts: search(elts, int64(first), int64(last))}
 			return
 		}
-		responseChan <- searchResult{err: &service.ErrorNotFound{Key: key}}
+		responseChan <- searchResult{err: &ErrorNotFound{Key: key}}
 	}
 	result := <-responseChan
 	return result.elts, result.err
@@ -155,7 +162,7 @@ func (s *storage) keys() []string {
 
 func (s *storage) calculateWorkerPartition(key string) int {
 	cs := xxhash.ChecksumString32(key)
-	return int(cs) % s.workerCount
+	return int(cs) % int(s.workerCount)
 }
 
 func insert(l *list.List, elt api.Element) {
@@ -192,7 +199,7 @@ func search(elts *list.List, first, last int64) []api.Element {
 	return result
 }
 
-func expireOldElements(data elementMap, firstTimestamp int64) {
+func expireOldElements(data elementMap, firstTimestamp int64, onExpire ExpiryHandler) {
 	var empties []string
 	for key, l := range data {
 
@@ -204,6 +211,9 @@ func expireOldElements(data elementMap, firstTimestamp int64) {
 			elt := curr.Value.(api.Element)
 			if elt.Timestamp < firstTimestamp {
 				l.Remove(curr)
+				if onExpire != nil {
+					onExpire(key, elt)
+				}
 				continue
 			}
 			break

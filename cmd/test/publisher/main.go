@@ -1,46 +1,56 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"time"
+	"strings"
+	"sync"
 
-	"github.com/micro/go-micro"
-	"github.com/micro/go-micro/broker"
-	"github.com/micro/go-plugins/broker/kafka"
-	"github.com/murphybytes/gots/api"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/murphybytes/gots/internal/config"
+	"github.com/pkg/errors"
 )
 
 func main() {
-
-	b := kafka.NewBroker(
-		func(o *broker.Options) {
-			o.Addrs = []string{
-				"192.168.1.146:9092",
-			}
-		},
-	)
-
-	service := micro.NewService(
-		micro.Name("publisher"),
-		micro.Broker(b),
-	)
-	service.Init()
-	pub := micro.NewPublisher("test", service.Client())
-
-	msg := &api.Message{
-		Key:       "foo",
-		Timestamp: time.Now().UnixNano(),
-		Data:      []byte("this is the payload"),
-	}
-
-	err := pub.Publish(context.Background(), msg)
+	config, err := config.New()
 	if err != nil {
-		fmt.Printf("Error: %s", err)
+		fmt.Printf("Program failed: %s\n", errors.Wrap(err, "starting program"))
+		os.Exit(1)
+	}
+	p, err := kafka.NewProducer(&kafka.ConfigMap{
+		"bootstrap.servers": strings.Join([]string(config.Kafka.BrokerAddress), ","),
+	})
+	if err != nil {
+		fmt.Printf("Program failed: %s\n", errors.Wrap(err, "starting kafka producer"))
 		os.Exit(1)
 	}
 
-	time.Sleep(time.Second)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func(events <-chan kafka.Event) {
+		defer wg.Done()
+		for event := range events {
+			switch ev := event.(type) {
+			case *kafka.Message:
+				if ev.TopicPartition.Error != nil {
+					fmt.Printf("Publishing error: %s\n", ev.TopicPartition.Error)
+				} else {
+					fmt.Printf("Delivered message to topic %s at offset %v\n", *ev.TopicPartition.Topic, ev.TopicPartition.Offset)
+				}
+			}
+		}
+	}(p.Events())
+
+	for i := 0; i < 100; i++ {
+		for _, topic := range config.Kafka.Topics {
+			fmt.Println("pub topic " + topic)
+			p.ProduceChannel() <- &kafka.Message{TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny}, Value: []byte("hello there")}
+		}
+	}
+
+	p.Flush(2000)
+	p.Close()
+	wg.Wait()
 
 }

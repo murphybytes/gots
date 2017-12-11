@@ -8,6 +8,10 @@ to handle many writes and few reads and so is ideal for this type of data.
 
 ## Development
 
+**gots** uses [confluent-kafka-go](https://github.com/confluentinc/confluent-kafka-go) which requires a shared library 
+**librdkafka** to run.  See the [confluent-kafka-go](https://github.com/confluentinc/confluent-kafka-go) for installation
+instructions. 
+
 Generate files and update dependencies 
 
 `make init`
