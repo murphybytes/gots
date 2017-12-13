@@ -21,6 +21,6 @@ build-gots: pre
 build-publisher: pre
 	go build -o build/pub github.com/murphybytes/gots/cmd/test/publisher
 
-build: build-gots
+build: build-gots build-publisher
 
 .PHONY: pre

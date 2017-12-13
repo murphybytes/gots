@@ -41,6 +41,8 @@ type storage struct {
 type server struct {
 	// Address is the IP address and port that the server will listen on
 	Address string `env:"GOTS_SERVER_ADDRESS"`
+	// MetricsAddress is the IP address that will be used to expose metrics.
+	MetricsAddress string `env:"GOTS_METRICS_ADDRESS,default=:8989"`
 }
 
 type values struct {

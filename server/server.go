@@ -17,6 +17,8 @@ import (
 	"github.com/murphybytes/gots/internal/service/subscriber"
 	"google.golang.org/grpc"
 	"net"
+	"github.com/go-kit/kit/metrics"
+	"github.com/go-kit/kit/metrics/discard"
 )
 
 const (
@@ -36,7 +38,7 @@ func ElementMaxAge(age time.Duration) Option {
 }
 
 // StorageWorkerCount set the number of goroutines that will process incoming time series elements
-func StorageWorkerCount(workers storage.Count) Option {
+func StorageWorkerCount(workers int) Option {
 	return func(s *svr) {
 		s.storageWorkersCount = workers
 	}
@@ -52,7 +54,7 @@ func ExpirationCallback(handler storage.ExpiryHandler) Option {
 
 // StorageChannelBuffer is the number of elements that can be backed up in a channel that feeds a storage worker. This
 // can help throughput by asynchronously processing incoming Kafka messages.
-func StorageChannelBuffer(size storage.Size) Option {
+func StorageChannelBuffer(size int) Option {
 	return func(s *svr) {
 		s.storageChannelBufferSize = size
 	}
@@ -72,15 +74,30 @@ func ListenAddress(ip string) Option {
 	}
 }
 
+// ExpiredElementHandler function to handle expired time series elements.
+func ExpiredElementHandler(hnd storage.ExpiryHandler) Option {
+	return func(s *svr) {
+		s.expiryHandler = hnd
+	}
+}
+
+// MessageCounter count incoming messages.
+func MessageCounter(counter metrics.Counter) Option {
+	return func(s *svr) {
+		s.messageCounter = counter
+	}
+}
+
 type svr struct {
 	storageMaxAge            time.Duration
-	storageWorkersCount      storage.Count
-	storageChannelBufferSize storage.Size
+	storageWorkersCount      int
+	storageChannelBufferSize int
 	expiryHandler            storage.ExpiryHandler
 	storage                  io.Closer
 	subscriber               io.Closer
 	logger                   log.Logger
 	listenAddress            string
+	messageCounter metrics.Counter
 }
 
 // Run starts processing time series messages and exposes them via grpc endpoint. Run is a blocking call.
@@ -91,15 +108,19 @@ func Run(kcfg *kafka.ConfigMap, opts ...Option) error {
 		storageWorkersCount:      defaultWorkerCount,
 		storageChannelBufferSize: defaultChannelBufferSize,
 		listenAddress:            defaultGRPCListenAddress,
+		messageCounter: discard.NewCounter(),
 	}
 	for _, opt := range opts {
 		opt(s)
 	}
 	storage := storage.New(
-		s.storageMaxAge,
-		s.storageWorkersCount,
-		s.storageChannelBufferSize,
-		s.expiryHandler,
+		storage.Options{
+			MaxAge: s.storageMaxAge,
+			WorkerCount: s.storageWorkersCount,
+			ChannelBufferSize: s.storageChannelBufferSize,
+			OnExpire: s.expiryHandler,
+			MessageCounter: s.messageCounter,
+		},
 	)
 	defer storage.Close()
 

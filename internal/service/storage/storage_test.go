@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/metrics/discard"
 	"github.com/murphybytes/gots/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,7 +27,13 @@ func listToArray(l list.List) []api.Element {
 }
 
 func TestStorageCreationAndClose(t *testing.T) {
-	s := New(DefaultMaxAge, DefaultWorkerCount, DefaultChannelBufferSize, nil)
+	opts := Options{
+		MaxAge:            DefaultMaxAge,
+		WorkerCount:       DefaultWorkerCount,
+		ChannelBufferSize: DefaultChannelBufferSize,
+		MessageCounter:    discard.NewCounter(),
+	}
+	s := New(opts)
 	require.NotNil(t, s)
 	s.Close()
 }
@@ -187,8 +194,14 @@ func TestStorage(t *testing.T) {
 		}
 		return true
 	}
+	opts := Options{
+		MaxAge:            DefaultMaxAge,
+		WorkerCount:       10,
+		ChannelBufferSize: DefaultChannelBufferSize,
+		MessageCounter:    discard.NewCounter(),
+	}
 
-	storage := New(DefaultMaxAge, 10, DefaultChannelBufferSize, nil)
+	storage := New(opts)
 	defer storage.Close()
 	var wg sync.WaitGroup
 	wg.Add(200)
@@ -302,7 +315,12 @@ func TestStorageSearch(t *testing.T) {
 
 	for _, tc := range tt {
 		t.Run(tc.desc, func(t *testing.T) {
-			stg := New(DefaultMaxAge, 10, DefaultChannelBufferSize, nil)
+			stg := New(Options{
+				MaxAge:            DefaultMaxAge,
+				WorkerCount:       10,
+				ChannelBufferSize: DefaultChannelBufferSize,
+				MessageCounter:    discard.NewCounter(),
+			})
 			defer stg.Close()
 			for _, elt := range tc.inserts {
 				stg.Write(tc.key, epoch.Add(time.Duration(elt.Timestamp)), nil)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/OneOfOne/xxhash"
+	"github.com/go-kit/kit/metrics"
 	"github.com/murphybytes/gots/api"
 )
 
@@ -24,14 +25,18 @@ const (
 	DefaultChannelBufferSize = 100
 )
 
+// Writer this that write time series data associated with key at time ts.
 type Writer interface {
 	Write(key string, ts time.Time, data []byte)
 }
 
+// Searcher returns time series elements associated with key between first and last times. Times are represented
+// as the number of nanoseconds since January 1, 1970 UTC.
 type Searcher interface {
 	Search(key string, first, last uint64) ([]api.Element, error)
 }
 
+// Manager contains Search, Write and Close.
 type Manager interface {
 	io.Closer
 	Searcher
@@ -41,36 +46,44 @@ type Manager interface {
 // ExpiryHandler is a callback that will receive time series elements when they expire.  This can be used
 // to aggregate and persist old elements.
 type ExpiryHandler func(key string, elt api.Element)
-type Count int
-type Size int
 
 // Element storage is optimized for inserts
 type elementMap map[string]*list.List
 type operation func(data elementMap)
 
 type storage struct {
-	wait        sync.WaitGroup
-	close       chan struct{}
-	work        []chan operation
-	maxAge      time.Duration
-	workerCount Count
+	wait  sync.WaitGroup
+	close chan struct{}
+	work  []chan operation
+	opts  Options
 }
 
-// New creates in memory storage for time series data. Elements older than maxAge will be discarded.  workerCount is the
-// number of goroutines to handle messages and search requests.
-// jobBufferSize is the number of jobs that can be queued up so jobs can be processed asynchronously.
-// TODO: add callback that will be invoked when elements expire so that callers can do things like aggregate/persist expired elements
-func New(maxAge time.Duration, workerCount Count, channelBufferSize Size, onExpire ExpiryHandler) *storage {
-	s := &storage{
-		close:       make(chan struct{}),
-		maxAge:      maxAge,
-		workerCount: workerCount,
-	}
-	s.work = make([]chan operation, workerCount)
-	s.wait.Add(int(workerCount))
+// Options for storage of time series.
+type Options struct {
+	// MaxAge time series elements older than this will be discarded.
+	MaxAge time.Duration
+	// WorkerCount is the number of goroutines that process incoming messages.
+	WorkerCount int
+	// ChannelBufferSize is the number of jobs that can be buffered in the jobs channel to improve throughput and async processing.
+	ChannelBufferSize int
+	// OnExpire is an optional method that is called when a time series element expires. This could be used to
+	// aggregate expiring elements into courser granularity or to write to persistent storage.
+	OnExpire ExpiryHandler
+	// MessageCounter keeps tally of the number of messages that have arrived.
+	MessageCounter metrics.Counter
+}
 
-	for i := 0; i < int(workerCount); i++ {
-		s.work[i] = make(chan operation, channelBufferSize)
+// New creates in memory storage for time series data.
+func New(opts Options) *storage {
+	s := &storage{
+		close: make(chan struct{}),
+		opts:  opts,
+	}
+	s.work = make([]chan operation, opts.WorkerCount)
+	s.wait.Add(opts.WorkerCount)
+
+	for i := 0; i < opts.WorkerCount; i++ {
+		s.work[i] = make(chan operation, opts.ChannelBufferSize)
 		go func(work <-chan operation, close <-chan struct{}) {
 			defer s.wait.Done()
 			ticker := time.Tick(expirationFrequency)
@@ -82,8 +95,8 @@ func New(maxAge time.Duration, workerCount Count, channelBufferSize Size, onExpi
 				case job := <-work:
 					job(data)
 				case <-ticker:
-					cutOff := time.Now().Add(-1 * s.maxAge).UnixNano()
-					expireOldElements(data, cutOff, onExpire)
+					cutOff := time.Now().Add(-1 * opts.MaxAge).UnixNano()
+					expireOldElements(data, cutOff, opts.OnExpire)
 				}
 			}
 		}(s.work[i], s.close)
@@ -94,6 +107,7 @@ func New(maxAge time.Duration, workerCount Count, channelBufferSize Size, onExpi
 
 // Write adds an element to the time series for a key.
 func (s *storage) Write(key string, ts time.Time, data []byte) {
+	s.opts.MessageCounter.Add(1)
 	newElt := api.Element{Timestamp: ts.UnixNano(), Data: data}
 	partition := s.calculateWorkerPartition(key)
 	s.work[partition] <- func(elts elementMap) {
@@ -162,7 +176,7 @@ func (s *storage) keys() []string {
 
 func (s *storage) calculateWorkerPartition(key string) int {
 	cs := xxhash.ChecksumString32(key)
-	return int(cs) % int(s.workerCount)
+	return int(cs) % s.opts.WorkerCount
 }
 
 func insert(l *list.List, elt api.Element) {

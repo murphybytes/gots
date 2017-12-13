@@ -8,6 +8,12 @@
   version = "v1.2.1"
 
 [[projects]]
+  name = "github.com/VividCortex/gohistogram"
+  packages = ["."]
+  revision = "51564d9861991fb0ad0f531c99ef602d0f9866e6"
+  version = "v1.0.0"
+
+[[projects]]
   name = "github.com/confluentinc/confluent-kafka-go"
   packages = ["kafka"]
   revision = "f696f02dcbb04d95b103c5b848bb15f749a996f7"
@@ -21,7 +27,7 @@
 
 [[projects]]
   name = "github.com/go-kit/kit"
-  packages = ["log"]
+  packages = ["log","metrics","metrics/discard","metrics/expvar","metrics/generic","metrics/internal/lv"]
   revision = "4dc7be5d2d12881735283bcab7352178e190fc71"
   version = "v0.6.0"
 
@@ -100,6 +106,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "abcb537647607a7eedebbda60f295f0f2127cda68fba2f4af9239195e21cc9b2"
+  inputs-digest = "6d0f7df88322a3b679fd3f98ff8bebc40f7024108ef8eb84e47b8a673f4ffb46"
   solver-name = "gps-cdcl"
   solver-version = 1
