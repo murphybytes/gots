@@ -51,6 +51,12 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/grpc-ecosystem/go-grpc-middleware"
+  packages = [".","auth","util/metautils"]
+  revision = "967bee733a734780623ac3d7c8e9216e4372ea62"
+
+[[projects]]
+  branch = "master"
   name = "github.com/joeshaw/envdecode"
   packages = ["."]
   revision = "6326cbed175e32cd5183be1cc1027e0823c91edb"
@@ -94,7 +100,7 @@
 [[projects]]
   branch = "master"
   name = "google.golang.org/genproto"
-  packages = ["googleapis/rpc/status"]
+  packages = ["googleapis/rpc/code","googleapis/rpc/status"]
   revision = "73cb5d0be5af113b42057925bd6c93e3cd9f60fd"
 
 [[projects]]
@@ -106,6 +112,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "6d0f7df88322a3b679fd3f98ff8bebc40f7024108ef8eb84e47b8a673f4ffb46"
+  inputs-digest = "a1495e5c968c5ee759d5e83214787c6aac12eeee62f62b172191598c2cad2ed7"
   solver-name = "gps-cdcl"
   solver-version = 1

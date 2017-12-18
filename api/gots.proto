@@ -40,8 +40,20 @@ message SearchResponse {
     Status status = 2;
 }
 
+// LoginRequest returns a token that can be used to authorize subsequent requests
+message LoginRequest {
+    string userName = 1;
+    string password = 2;
+}
+
+// LoginResponse returns auth token if login is successful.
+message LoginResponse {
+    string token = 1;
+}
+
 
 
 service TimeseriesService {
     rpc Search(SearchRequest) returns (SearchResponse);
+    rpc Login(LoginRequest) returns (LoginResponse);
 }

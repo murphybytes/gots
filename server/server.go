@@ -9,16 +9,21 @@ import (
 	"os"
 	"time"
 
+	"context"
+	"net"
+
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/metrics"
+	"github.com/go-kit/kit/metrics/discard"
+	"github.com/grpc-ecosystem/go-grpc-middleware/auth"
 	"github.com/murphybytes/gots/api"
 	"github.com/murphybytes/gots/internal/service"
 	"github.com/murphybytes/gots/internal/service/storage"
 	"github.com/murphybytes/gots/internal/service/subscriber"
 	"google.golang.org/grpc"
-	"net"
-	"github.com/go-kit/kit/metrics"
-	"github.com/go-kit/kit/metrics/discard"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -88,6 +93,16 @@ func MessageCounter(counter metrics.Counter) Option {
 	}
 }
 
+// WantAuth enables jwt based authentication for the server.  A login handler takes a user name and password and
+// if authorized returns a token that will be passed to the server in subsequent requests from the client.  The
+// auth handler receives this token and uses it to authorize requests.
+func WantAuth(auth service.AuthHandler, login service.LoginHandler) Option {
+	return func(s *svr) {
+		s.authHandler = auth
+		s.loginHandler = login
+	}
+}
+
 type svr struct {
 	storageMaxAge            time.Duration
 	storageWorkersCount      int
@@ -97,7 +112,9 @@ type svr struct {
 	subscriber               io.Closer
 	logger                   log.Logger
 	listenAddress            string
-	messageCounter metrics.Counter
+	messageCounter           metrics.Counter
+	authHandler              service.AuthHandler
+	loginHandler             service.LoginHandler
 }
 
 // Run starts processing time series messages and exposes them via grpc endpoint. Run is a blocking call.
@@ -108,18 +125,18 @@ func Run(kcfg *kafka.ConfigMap, opts ...Option) error {
 		storageWorkersCount:      defaultWorkerCount,
 		storageChannelBufferSize: defaultChannelBufferSize,
 		listenAddress:            defaultGRPCListenAddress,
-		messageCounter: discard.NewCounter(),
+		messageCounter:           discard.NewCounter(),
 	}
 	for _, opt := range opts {
 		opt(s)
 	}
 	storage := storage.New(
 		storage.Options{
-			MaxAge: s.storageMaxAge,
-			WorkerCount: s.storageWorkersCount,
+			MaxAge:            s.storageMaxAge,
+			WorkerCount:       s.storageWorkersCount,
 			ChannelBufferSize: s.storageChannelBufferSize,
-			OnExpire: s.expiryHandler,
-			MessageCounter: s.messageCounter,
+			OnExpire:          s.expiryHandler,
+			MessageCounter:    s.messageCounter,
 		},
 	)
 	defer storage.Close()
@@ -135,7 +152,9 @@ func Run(kcfg *kafka.ConfigMap, opts ...Option) error {
 	defer subs.Close()
 
 	svc := service.New(s.logger, storage)
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(grpc_auth.UnaryServerInterceptor(injectAuthFunctions(s.authHandler))),
+	)
 	api.RegisterTimeseriesServiceServer(grpcServer, svc)
 
 	listener, err := net.Listen("tcp", s.listenAddress)
@@ -148,4 +167,22 @@ func Run(kcfg *kafka.ConfigMap, opts ...Option) error {
 	}
 
 	return nil
+}
+
+func injectAuthFunctions(h service.AuthHandler) grpc_auth.AuthFunc {
+	return func(ctx context.Context) (context.Context, error) {
+		// If no auth handler exists we are always authenticated
+		if h == nil {
+			return service.SetAuthenticated(ctx, true), nil
+		}
+		token, err := grpc_auth.AuthFromMD(ctx, "bearer")
+		if err != nil {
+			return service.SetAuthenticated(ctx, false ), nil
+		}
+		if err = h(token); err != nil {
+			return service.SetAuthenticated(ctx,false), nil
+		}
+
+		return service.SetAuthenticated(ctx,true), nil
+	}
 }
