@@ -6,18 +6,18 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/murphybytes/gots/api"
 	"github.com/murphybytes/gots/internal/service/storage"
-	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/codes"
 )
 
 // TimeseriesService defines endpoint for grpc calls.
 type TimeseriesService interface {
 	Search(context.Context, *api.SearchRequest) (*api.SearchResponse, error)
-	Login(context.Context, *api.LoginRequest)(*api.LoginResponse, error)
+	Login(context.Context, *api.LoginRequest) (*api.LoginResponse, error)
 }
 
 type svc struct {
-	searcher storage.Searcher
+	searcher     storage.Searcher
 	loginHandler LoginHandler
 }
 
@@ -25,7 +25,7 @@ func New(logger log.Logger, searcher storage.Searcher, hLogin LoginHandler) Time
 	var s TimeseriesService
 	{
 		s = &svc{
-			searcher: searcher,
+			searcher:     searcher,
 			loginHandler: hLogin,
 		}
 		s = newLoggingMiddleware(logger)(s)
@@ -59,9 +59,9 @@ func (s *svc) Search(ctx context.Context, req *api.SearchRequest) (*api.SearchRe
 	return &resp, nil
 }
 
-func(s *svc) Login(ctx context.Context, req *api.LoginRequest)(*api.LoginResponse,error) {
+func (s *svc) Login(ctx context.Context, req *api.LoginRequest) (*api.LoginResponse, error) {
 	if s.loginHandler == nil {
-		return nil, status.Error(code.Code_UNIMPLEMENTED, "Login is not implemented")
+		return nil, status.Error(codes.Unimplemented, "Login is not implemented")
 	}
 	token, err := s.loginHandler(req.UserName, req.Password)
 	if err != nil {

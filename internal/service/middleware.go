@@ -4,11 +4,11 @@ import (
 	"context"
 	"github.com/go-kit/kit/log"
 	"time"
-	//"github.com/go-kit/kit/metrics"
+
 	"github.com/murphybytes/gots/api"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"fmt"
+
 )
 
 

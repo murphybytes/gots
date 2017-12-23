@@ -22,8 +22,6 @@ import (
 	"github.com/murphybytes/gots/internal/service/storage"
 	"github.com/murphybytes/gots/internal/service/subscriber"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 const (
@@ -93,9 +91,10 @@ func MessageCounter(counter metrics.Counter) Option {
 	}
 }
 
-// WantAuth enables jwt based authentication for the server.  A login handler takes a user name and password and
+// WantAuth enables authentication for the server.  A login handler takes a user name and password and
 // if authorized returns a token that will be passed to the server in subsequent requests from the client.  The
-// auth handler receives this token and uses it to authorize requests.
+// auth handler receives this token and uses it to authorize requests. Typically the this would
+// be a JWT token.
 func WantAuth(auth service.AuthHandler, login service.LoginHandler) Option {
 	return func(s *svr) {
 		s.authHandler = auth
@@ -151,7 +150,7 @@ func Run(kcfg *kafka.ConfigMap, opts ...Option) error {
 	}
 	defer subs.Close()
 
-	svc := service.New(s.logger, storage)
+	svc := service.New(s.logger, storage, s.loginHandler)
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(grpc_auth.UnaryServerInterceptor(injectAuthFunctions(s.authHandler))),
 	)
